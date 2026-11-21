@@ -152,6 +152,27 @@ test('500: kept and tried again after a backoff', async () => {
   assert.equal(fake.requests[1].body.errors[0].message, 'server down');
 });
 
+test('a timer that wakes a few ms before the backoff ends: it waits out the rest and sends (it never stops sending)', async () => {
+  // Timers run on a monotonic clock, the backoff ends at a Date.now() time: on CI runners (Node 18 and 20 on Ubuntu
+  // 26.04) the retry timer woke a few ms "early", and the library then stopped sending for good.
+  fake.plan({ status: 500 });
+  start();
+  m.captureException(new Error('server down'));
+  await m.flush(3000);
+  assert.equal(fake.requests.length, 1);
+  const realNow = Date.now;
+  Date.now = () => realNow() - 25; // the wall clock now reads 25 ms behind the timers
+  try {
+    await fake.wait(2, 8000);
+  } finally {
+    Date.now = realNow;
+  }
+  assert.equal(fake.requests.length, 2, 'the retry never came');
+  assert.equal(fake.requests[1].body.errors[0].message, 'server down');
+  const gap = fake.requests[1].at - fake.requests[0].at;
+  assert.ok(gap < 3000, 'retried after ' + gap + ' ms: an early wake cost a whole extra wait');
+});
+
 test('a network failure keeps the problem', async () => {
   start({ endpoint: 'http://127.0.0.1:9/api/v1/app-reports' });
   m.captureException(new Error('nobody listening'));

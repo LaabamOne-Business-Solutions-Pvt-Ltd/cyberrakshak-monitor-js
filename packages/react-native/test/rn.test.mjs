@@ -162,6 +162,27 @@ test('a fatal error the console cannot take now is kept in storage and sent at t
   assert.equal(storage.data.has('cyberrakshak-monitor:v1'), false, 'storage is emptied once sent');
 });
 
+test('a timer that wakes a few ms before the backoff ends: it waits out the rest and sends (it never stops sending)', async () => {
+  // Timers run on a monotonic clock, the backoff ends at a Date.now() time: a retry timer can wake a few ms "early"
+  // (the Node.js library's did on CI runners), and the library then stopped sending for good.
+  fake.plan({ status: 500 });
+  start();
+  m.captureException(new Error('server down'));
+  await m.flush(3000);
+  assert.equal(fake.requests.length, 1);
+  const realNow = Date.now;
+  Date.now = () => realNow() - 25; // the wall clock now reads 25 ms behind the timers
+  try {
+    await fake.wait(2, 8000);
+  } finally {
+    Date.now = realNow;
+  }
+  assert.equal(fake.requests.length, 2, 'the retry never came');
+  assert.equal(fake.requests[1].body.errors[0].message, 'server down');
+  const gap = fake.requests[1].at - fake.requests[0].at;
+  assert.ok(gap < 3000, 'retried after ' + gap + ' ms: an early wake cost a whole extra wait');
+});
+
 test('in development the previous handler (the red screen) runs at once, fatal or not', () => {
   globalThis.__DEV__ = true;
   start();

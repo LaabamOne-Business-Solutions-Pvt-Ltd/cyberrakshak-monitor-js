@@ -344,7 +344,10 @@ function schedule(s, delay) {
     const wait = Math.max(delay, s.notBefore - Date.now());
     s.timer = setTimeout(() => {
       s.timer = null;
-      send(s).catch(() => {});
+      // Timers run on a monotonic clock, notBefore is Date.now() time: a timer can wake a few ms before it. Then
+      // only the rest is waited out (not a whole SEND_AFTER_MS more).
+      if (Date.now() < s.notBefore) schedule(s, 0);
+      else send(s).catch(() => {});
     }, wait);
     if (typeof s.timer.unref === 'function') s.timer.unref();
   } catch {
@@ -424,6 +427,9 @@ async function post(s, body) {
 /** One request with up to 10 waiting problems. Resolves to 'sent', 'empty', 'later' (kept for a retry) or 'dropped'. */
 function send(s) {
   if (s.sending) return s.sending;
+  // ⚠️ What follows can end before its first await ('empty', 'later'): its clean-up is chained after it (.finally), so
+  // that it always runs after s.sending is set. Inside the async function, a finally that ran at once cleared
+  // s.sending before it was set, which then stayed set: nothing was sent again.
   s.sending = (async () => {
     try {
       if (!s.queue.size) return 'empty';
@@ -465,12 +471,12 @@ function send(s) {
     } catch (e) {
       debug(s, 'could not send: ' + describe(e));
       return 'dropped';
-    } finally {
-      s.inflight = null;
-      s.sending = null;
-      schedule(s, SEND_AFTER_MS);
     }
-  })();
+  })().finally(() => {
+    s.inflight = null;
+    s.sending = null;
+    schedule(s, SEND_AFTER_MS);
+  });
   return s.sending;
 }
 

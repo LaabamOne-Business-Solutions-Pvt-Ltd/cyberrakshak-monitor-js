@@ -480,7 +480,10 @@ function schedule(s: State, delay: number): void {
     const wait = Math.max(delay, s.notBefore - Date.now());
     s.timer = setTimeout(() => {
       s.timer = null;
-      send(s).catch(() => undefined);
+      // Timers run on a monotonic clock, notBefore is Date.now() time: a timer can wake a few ms before it. Then
+      // only the rest is waited out (not a whole SEND_AFTER_MS more).
+      if (Date.now() < s.notBefore) schedule(s, 0);
+      else send(s).catch(() => undefined);
     }, wait);
   } catch {
     // Never a second problem.
@@ -662,12 +665,15 @@ function send(s: State): Promise<string> {
     } catch (e) {
       debug(s, 'could not send: ' + describe(e));
       return 'dropped';
-    } finally {
-      s.sending = null;
-      schedule(s, SEND_AFTER_MS);
     }
   };
-  s.sending = run();
+  // ⚠️ run() can end before its first await ('empty', 'later'): its clean-up is chained after it (.finally), so that it
+  // always runs after s.sending is set. Inside run(), a finally that ran at once cleared s.sending before it was set,
+  // which then stayed set: nothing was sent again.
+  s.sending = run().finally(() => {
+    s.sending = null;
+    schedule(s, SEND_AFTER_MS);
+  });
   return s.sending;
 }
 
