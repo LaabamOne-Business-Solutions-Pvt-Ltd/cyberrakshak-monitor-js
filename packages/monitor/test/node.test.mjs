@@ -80,7 +80,7 @@ test('a captured exception is sent in the contract\'s shape, scrubbed', async ()
   const r = fake.requests[0];
   assert.equal(r.authorization, 'Bearer ' + KEY);
   assert.equal(r.body.sdk.name, 'cyberrakshak-node');
-  assert.equal(r.body.sdk.version, '1.0.0');
+  assert.equal(r.body.sdk.version, '1.1.0');
   assert.equal(r.body.platform, 'server');
   assert.match(r.body.runtime, /^node \d+\.\d+$/);
   assert.equal(r.body.release, '2026.11.21+3');
@@ -353,4 +353,70 @@ test('the key is never printed, even with debug on', async () => {
   assert.equal(r.code, 0);
   assert.match(r.stderr, /401/);
   assert.doesNotMatch(r.stdout + r.stderr, /crk_0/);
+});
+
+test('scrubNames and scrubPatterns add to the built-in rules, in message, stack, route and context', async () => {
+  start({ scrubNames: ['x-brand-key', 'face.key'], scrubPatterns: [/faces\/[A-Za-z0-9/_.-]+/, 'upload-[0-9]+'] });
+  m.captureException(new Error('x-brand-key=B1 for faces/2026/a.jpg (upload-77)'), { route: '/files/face.key=K9', context: { note: 'face.key: k2', other: 'x-brand-key: v' } });
+  assert.equal(await m.flush(3000), true);
+  clean();
+  const [p] = problems();
+  assert.equal(p.message, 'x-brand-key=[removed] for [removed] ([removed])');
+  assert.doesNotMatch(p.stack, /faces\/2026|B1 for/);
+  assert.equal(p.route, '/files/face.key=[removed]');
+  assert.deepEqual(p.context, { note: 'face.key: [removed]', other: 'x-brand-key: [removed]' });
+  // Built-in rules still run, and scrub() shows the same.
+  assert.equal(m.scrub('pin=1 x-brand-key=2 password=3'), 'pin=[removed] x-brand-key=[removed] password=[removed]');
+  m.close();
+  assert.equal(m.scrub('x-brand-key=2'), 'x-brand-key=2', 'after close(), only the built-in rules');
+});
+
+test('scrubNames and scrubPatterns: what is not usable is left out, and the built-in rules cannot be removed', () => {
+  const warnings = [];
+  const write = process.stderr.write;
+  process.stderr.write = (chunk) => (warnings.push(String(chunk)), true);
+  try {
+    start({ debug: true, scrubNames: ['ok_name', 'bad name', 7, ...Array.from({ length: 60 }, (_, i) => 'n' + i)], scrubPatterns: ['(', 'x*', /fine/, ...Array.from({ length: 25 }, (_, i) => 'p' + i + 'q')] });
+  } finally {
+    process.stderr.write = write;
+  }
+  const said = warnings.join('');
+  assert.match(said, /scrubNames: a name was left out/);
+  assert.match(said, /scrubNames: only the first 50 are used/);
+  assert.match(said, /scrubPatterns: a pattern was left out/);
+  assert.match(said, /matches an empty text was left out/);
+  assert.match(said, /scrubPatterns: only the first 20 are used/);
+  assert.equal(m.scrub('ok_name=1 n48=2 n49=3 fine p0q'), 'ok_name=[removed] n48=[removed] n49=3 [removed] [removed]');
+  assert.equal(m.scrub('password=1 card 4111 1111 1111 1111'), 'password=[removed] card [card]');
+});
+
+test('a context entry whose name is a secret name goes as [removed], whatever its value', async () => {
+  start({ context: { client_secret: 'abc', region: 'dub1' }, scrubNames: ['brandKey'] });
+  m.captureException(new Error('x'), { context: { user_pin: 1234, iban: 'IE29AIBK93115212345678', 'x-tink-signature': true, spinning: 'yes', brandKey: 'b', japan: 3 } });
+  assert.equal(await m.flush(3000), true);
+  clean();
+  assert.deepEqual(problems()[0].context, { client_secret: '[removed]', region: 'dub1', user_pin: '[removed]', iban: '[removed]', 'x-tink-signature': '[removed]', spinning: 'yes', brandKey: '[removed]', japan: 3 });
+});
+
+test('captureRequestError: the route Next.js names, never the path or headers, sent before it resolves', async () => {
+  start();
+  const err = Object.assign(new Error('relation "payments" does not exist'), { digest: '2937' });
+  const request = { path: '/api/pay?otp=123456', method: 'post', headers: { authorization: 'Bearer abcdefghijk', cookie: 'sid=1' } };
+  const context = { routerKind: 'App Router', routePath: '/app/api/pay/route', routeType: 'route', renderSource: 'react-server-components' };
+  assert.equal(await m.captureRequestError(err, request, context), true);
+  clean();
+  assert.equal(fake.requests.length, 1);
+  const [p] = problems();
+  assert.equal(p.kind, 'http');
+  assert.equal(p.route, 'POST /app/api/pay/route');
+  assert.deepEqual(p.context, { routeType: 'route' });
+  assert.doesNotMatch(JSON.stringify(fake.requests[0].body), /otp|123456|sid=1|abcdefghijk/);
+  assert.equal(cjs.captureRequestError, cjs.default.captureRequestError);
+});
+
+test('captureRequestError never throws and resolves without init', async () => {
+  assert.equal(await m.captureRequestError(null, null, null), true);
+  start();
+  assert.equal(await m.captureRequestError(new Error('x'), { method: 7 }, { routePath: 7 }), true);
+  assert.equal(problems()[0].route, undefined);
 });

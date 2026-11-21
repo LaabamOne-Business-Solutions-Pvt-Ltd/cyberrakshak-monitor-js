@@ -16,6 +16,8 @@ const options: Options = {
   context: { build: 57 },
   storage,
   capturePromiseRejections: true,
+  scrubNames: ['x-brand-key', 'face.key'],
+  scrubPatterns: [/faces\/\S+/, 'upload-[0-9]+'],
 };
 monitor.init(options);
 monitor.setRoute('Checkout');

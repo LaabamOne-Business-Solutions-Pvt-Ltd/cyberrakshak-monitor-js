@@ -1,6 +1,6 @@
 {
   "name": "@cyberrakshak/monitor",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Cyber Rakshak error monitoring for Node.js: uncaught exceptions, unhandled rejections and Express 5xx errors, scrubbed of secrets, sent to your site's Errors page. One file, no dependencies.",
   "license": "MIT",
   "author": "Laabam One Business Solutions (OPC) Private Limited",

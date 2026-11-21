@@ -24,7 +24,7 @@ test('import gets the ES module and require the CommonJS twin, through "exports"
 });
 
 test('both have the same functions, by name and as the default export', () => {
-  assert.deepEqual(named(esm), ['captureException', 'captureMessage', 'close', 'expressErrorHandler', 'flush', 'init', 'scrub']);
+  assert.deepEqual(named(esm), ['captureException', 'captureMessage', 'captureRequestError', 'close', 'expressErrorHandler', 'flush', 'init', 'scrub']);
   assert.deepEqual(named(cjs), named(esm));
   assert.deepEqual(Object.keys(esmDefault).sort(), named(esm));
   for (const name of named(esm)) {

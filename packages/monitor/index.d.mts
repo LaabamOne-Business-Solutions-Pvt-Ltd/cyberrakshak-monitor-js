@@ -24,7 +24,7 @@ export interface Problem {
 }
 
 export interface Options {
-  /** Your site's app key: crk_ and 32 letters or digits, from the site's Errors page. Without a valid key nothing starts. */
+  /** Your site's app key: crk_ and 32 letters or digits (the site's Security scan tab, Apps, servers and scripts, Make an app key). Without a valid key nothing starts. */
   key: string;
   /** Where reports go. Default https://app.cyberrakshak.ai/api/v1/app-reports. */
   endpoint?: string;
@@ -50,6 +50,27 @@ export interface Options {
   captureRejections?: boolean;
   /** On process.exit(), send what is still waiting from a short-lived child process, 2 s at most (default true). */
   exitSend?: boolean;
+  /** Names of your own whose values are removed, like password=: whole words, A-Z a-z 0-9 _ . - (at most 50). Only adds to the built-in rules. */
+  scrubNames?: string[];
+  /** Regular expressions of your own (a string is compiled with the g flag): what they match is removed (at most 20). Only adds to the built-in rules. */
+  scrubPatterns?: Array<RegExp | string>;
+}
+
+/** What Next.js hands instrumentation.ts's onRequestError: only method and routePath are used (never path or headers). */
+export interface RequestErrorRequest {
+  path?: string;
+  method?: string;
+  headers?: Record<string, string | string[] | undefined>;
+}
+export interface RequestErrorContext {
+  routerKind?: string;
+  /** The route file path, e.g. /app/api/orders/[id]/route. */
+  routePath?: string;
+  /** render, route, action or proxy: sent as context.routeType. */
+  routeType?: string;
+  renderSource?: string;
+  revalidateReason?: string;
+  renderType?: string;
 }
 
 export interface CaptureExtra {
@@ -84,6 +105,13 @@ export declare function captureMessage(text: string, extra?: CaptureExtra): void
 /** Error middleware for Express / Connect: reports errors that end a request with a 5xx (not 4xx), then passes them on unchanged. Add it after your routes. */
 export declare function expressErrorHandler(): ExpressErrorHandler;
 
+/**
+ * Next.js: the whole of instrumentation.ts's onRequestError, `await captureRequestError(err, request, context)`. Reports
+ * the error under the route Next.js names (method + routePath; never request.path or headers), then sends what is
+ * waiting: resolves true once nothing is left, false after 2 s at most.
+ */
+export declare function captureRequestError(error: unknown, request?: RequestErrorRequest | null, context?: RequestErrorContext | null): Promise<boolean>;
+
 /** Sends what is waiting now. Resolves to true when nothing is left waiting, within `timeoutMs` (default 2000). */
 export declare function flush(timeoutMs?: number): Promise<boolean>;
 
@@ -95,6 +123,7 @@ declare const monitor: {
   close: typeof close;
   captureException: typeof captureException;
   captureMessage: typeof captureMessage;
+  captureRequestError: typeof captureRequestError;
   expressErrorHandler: typeof expressErrorHandler;
   flush: typeof flush;
   scrub: typeof scrub;

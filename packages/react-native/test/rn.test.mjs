@@ -287,3 +287,17 @@ test('nothing it is given makes it throw, before or after init', async () => {
   await m.flush(3000);
   clean();
 });
+
+test('scrubNames and scrubPatterns add to the built-in rules; a secret context name goes as [removed]', async () => {
+  start({ scrubNames: ['x-brand-key', 'face.key', 'bad name'], scrubPatterns: [/faces\/[A-Za-z0-9/_.-]+/, '(', 'x*'], context: { user_pin: 1234, spinning: 'yes' } });
+  m.captureException(new Error('x-brand-key=B1 for faces/2026/a.jpg'), { route: 'Upload face.key=K9', context: { iban: 'IE29AIBK93115212345678', 'face.key': 'k', note: 'xface.key=stays' } });
+  assert.equal(await m.flush(3000), true);
+  for (const r of fake.requests) assert.deepEqual(r.violations, [], 'request ' + r.n + ' broke the contract');
+  const [p] = problems();
+  assert.equal(p.message, 'x-brand-key=[removed] for [removed]');
+  assert.equal(p.route, 'Upload face.key=[removed]');
+  assert.deepEqual(p.context, { user_pin: '[removed]', spinning: 'yes', iban: '[removed]', 'face.key': '[removed]', note: 'xface.key=stays' });
+  assert.equal(m.scrub('pin=1 x-brand-key=2'), 'pin=[removed] x-brand-key=[removed]');
+  m.close();
+  assert.equal(m.scrub('x-brand-key=2'), 'x-brand-key=2', 'after close(), only the built-in rules');
+});

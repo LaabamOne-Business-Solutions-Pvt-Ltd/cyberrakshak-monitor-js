@@ -1,6 +1,6 @@
 {
   "name": "@cyberrakshak/react-native",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Cyber Rakshak error monitoring for React Native and Expo: errors and crashes from React Native's global handler and unhandled promise rejections on Hermes, scrubbed of secrets, sent to your site's Errors page. No native modules.",
   "license": "MIT",
   "author": "Laabam One Business Solutions (OPC) Private Limited",

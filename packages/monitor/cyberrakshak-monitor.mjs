@@ -1,5 +1,5 @@
 /*!
- * Cyber Rakshak error monitoring for Node.js, version 1.0.0
+ * Cyber Rakshak error monitoring for Node.js, version 1.1.0
  * Docs: https://app.cyberrakshak.ai/sdk/README.md
  * Copyright Laabam One Business Solutions (OPC) Private Limited
  * Released under the MIT licence: https://app.cyberrakshak.ai/sdk/LICENSE
@@ -17,6 +17,7 @@
  *   monitor.captureException(err, { route: 'nightly-import', context: { batch: 42 } });
  *   monitor.captureMessage('Payment provider answered slowly', { level: 'warning' });
  *   await monitor.flush(2000);                                    // before calling process.exit() yourself
+ *   await monitor.captureRequestError(err, request, context);     // Next.js: the whole of onRequestError
  *
  * Caught by itself: uncaught exceptions (reported, then Node's own behaviour: the error is printed and the process
  * exits with code 1, after at most 2 s of sending) and unhandled promise rejections (Node's own behaviour kept, as set
@@ -28,7 +29,7 @@ import { spawnSync } from 'node:child_process';
 import { inspect } from 'node:util';
 
 const SDK_NAME = 'cyberrakshak-node';
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 const DEFAULT_ENDPOINT = 'https://app.cyberrakshak.ai/api/v1/app-reports';
 
 const KEY_RE = /^crk_[A-Za-z0-9]{32}$/;
@@ -70,8 +71,16 @@ const SCRUB_RULES = [
   [/(?<![A-Za-z0-9])(?:crk_|crw_|sk_live_|sk_test_|pk_live_|pk_test_|rk_live_|ghp_|gho_|ghs_|ghu_|github_pat_|glpat-|xoxb-|xoxp-|xoxa-|AKIA|ASIA|AIza)[A-Za-z0-9_-]{10,}/g, () => '[token]'],
   // Email addresses.
   [/[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, () => '[email]'],
+  // IBANs: two capital letters, two digits, then 11 to 30 capitals or digits (or the same in groups of four, single
+  // spaces between), 15 to 34 in all, passing the ISO 13616 mod-97 check. Before cards: an IBAN holds a digit run.
+  [/(?<![A-Za-z0-9])[A-Z]{2}[0-9]{2}(?:[A-Z0-9]{11,30}|(?: [A-Z0-9]{4}){2,7}(?: [A-Z0-9]{1,4})?)(?![A-Za-z0-9])/g, (all) => (ibanOk(all) ? '[iban]' : all)],
   // Card numbers: 13 to 19 digits (single spaces or dashes between) that pass the Luhn check.
   [/(?<![0-9])[0-9](?:[ -]?[0-9]){12,18}/g, (all) => (luhn(all.replace(/[ -]/g, '')) ? '[card]' : all)],
+  // pin: 1234, "iban": "...", set-cookie: ..., x-tink-signature=...: these names only as whole words (not right after a
+  // letter or digit, the separator right after the name), so company:, spinning: and japan: stay; the value goes as in
+  // the password rule. After IBANs and cards, so a value with spaces in it has gone whole already. A value that is
+  // Bearer or Basic and a space was handled above.
+  [/(?<![A-Za-z0-9])((?:authorization|cookie|signature|otp|pin|cvv|cvc|iban|bban|pan|account[_-]?(?:no|number|num)|sort[_-]?code|card[_-]?number|bank[_-]?auth[_-]?id)\\?["']?[ ]*[=:][ ]*\\?["']?)(?!(?:bearer|basic) )[^ \t\r\n&,;"'<>\\]+/gi, (all, name) => name + '[removed]'],
   // Long hex runs: session ids, hashes, keys.
   [/[0-9a-fA-F]{32,}/g, () => '[token]'],
   // Long random-looking runs: a digit, an upper-case and a lower-case letter in 40 or more of A-Z a-z 0-9 + _ -.
@@ -93,17 +102,108 @@ function luhn(digits) {
   return sum % 10 === 0;
 }
 
-/** What a text looks like once scrubbed: what this library would send. */
+/** ISO 13616: the first four characters moved to the end, letters as 10..35, the whole number mod 97 is 1. */
+function ibanOk(text) {
+  const s = text.replace(/ /g, '');
+  if (s.length < 15 || s.length > 34) return false;
+  const moved = s.slice(4) + s.slice(0, 4);
+  let rest = 0;
+  for (let i = 0; i < moved.length; i++) {
+    const c = moved.charCodeAt(i);
+    const v = c >= 65 ? c - 55 : c - 48;
+    rest = v > 9 ? (rest * 100 + v) % 97 : (rest * 10 + v) % 97;
+  }
+  return rest === 1;
+}
+
+// A context entry's name that says its value is a secret: the words of the password rule anywhere in it, or one of the
+// whole-word names (at the end, not right after a letter or digit: user_pin, x-tink-signature, not spinning).
+const SECRET_NAME_RE = /password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|credential|session[_-]?id/i;
+const WHOLE_NAME_RE = /(?:^|[^A-Za-z0-9])(?:authorization|cookie|signature|otp|pin|cvv|cvc|iban|bban|pan|account[_-]?(?:no|number|num)|sort[_-]?code|card[_-]?number|bank[_-]?auth[_-]?id)$/i;
+const EXTRA_NAME_RE = /^[A-Za-z0-9_.-]{1,40}$/;
+const MAX_EXTRA_NAMES = 50;
+const MAX_EXTRA_PATTERNS = 20;
+
+function secretName(name) {
+  const s = S;
+  return SECRET_NAME_RE.test(name) || WHOLE_NAME_RE.test(name) || !!(s && s.extraKeys && s.extraKeys.test(name));
+}
+
+/**
+ * What a text looks like once scrubbed: what this library would send. The built-in rules always run, first; then the
+ * names and patterns given to init() as scrubNames and scrubPatterns, which can only add to them.
+ */
 function scrub(text) {
   try {
     let out = String(text ?? '');
     for (const [pattern, replace] of SCRUB_RULES) {
       out = out.replace(pattern, replace);
     }
+    const s = S;
+    if (s && s.extraNames) out = out.replace(s.extraNames, (all, name) => name + '[removed]');
+    if (s && s.extraPatterns) {
+      for (const pattern of s.extraPatterns) {
+        try {
+          out = out.replace(pattern, '[removed]');
+        } catch {
+          // A pattern of yours that fails is skipped; the built-in rules have run.
+        }
+      }
+    }
     return out;
   } catch {
     return '';
   }
+}
+
+/** scrubNames: names of your own, as whole words, their values removed like the built-in ones; at most 50. */
+function extraNames(list, probe) {
+  const names = [];
+  if (list === undefined || list === null) return names;
+  if (!Array.isArray(list)) {
+    debug(probe, 'scrubNames left out: it must be a list of names');
+    return names;
+  }
+  for (const name of list) {
+    if (typeof name !== 'string' || !EXTRA_NAME_RE.test(name)) {
+      debug(probe, 'scrubNames: a name was left out: only A-Z a-z 0-9 _ . - (1 to 40)');
+      continue;
+    }
+    if (names.length >= MAX_EXTRA_NAMES) {
+      debug(probe, 'scrubNames: only the first ' + MAX_EXTRA_NAMES + ' are used');
+      break;
+    }
+    if (!names.includes(name.toLowerCase())) names.push(name.toLowerCase());
+  }
+  return names;
+}
+
+/** scrubPatterns: regular expressions of your own (RegExp, or a string compiled with the g flag); what they match goes. */
+function extraPatterns(list, probe) {
+  const patterns = [];
+  if (list === undefined || list === null) return patterns;
+  if (!Array.isArray(list)) {
+    debug(probe, 'scrubPatterns left out: it must be a list of patterns');
+    return patterns;
+  }
+  for (const p of list) {
+    if (patterns.length >= MAX_EXTRA_PATTERNS) {
+      debug(probe, 'scrubPatterns: only the first ' + MAX_EXTRA_PATTERNS + ' are used');
+      break;
+    }
+    try {
+      const re = p instanceof RegExp ? new RegExp(p.source, p.flags.includes('g') ? p.flags : p.flags + 'g') : new RegExp(String(p), 'g');
+      if (re.test('')) {
+        debug(probe, 'scrubPatterns: a pattern that matches an empty text was left out');
+        continue;
+      }
+      re.lastIndex = 0;
+      patterns.push(re);
+    } catch (e) {
+      debug(probe, 'scrubPatterns: a pattern was left out: ' + describe(e));
+    }
+  }
+  return patterns;
 }
 
 // ── State ─────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -191,7 +291,8 @@ function cleanContext(...sources) {
       const key = clip(name, MAX_CONTEXT_KEY);
       const value = source[name];
       let kept;
-      if (value === null || typeof value === 'boolean') kept = value;
+      if (secretName(name)) kept = '[removed]';
+      else if (value === null || typeof value === 'boolean') kept = value;
       else if (typeof value === 'number') kept = Number.isFinite(value) ? value : undefined;
       else if (typeof value === 'bigint') kept = String(value);
       else if (typeof value === 'string') kept = cleanText(value, MAX_CONTEXT_VALUE);
@@ -645,6 +746,8 @@ function onExit() {
 /**
  * Starts monitoring. Options: key (required, crk_...), endpoint, release, environment, enabled (default true),
  * sampleRate (0..1, default 1), beforeSend(problem) => problem | null, debug, context (sent with every problem),
+ * scrubNames (names of your own whose values are removed, like password=), scrubPatterns (regular expressions whose
+ * matches are removed): both only add to the built-in rules, which always run,
  * platform ('server' unless you say 'script', 'desktop' or 'other'), captureUncaught and captureRejections (default true),
  * exitSend (default true: on process.exit(), what is still waiting goes from a short-lived child process, 2 s at most).
  */
@@ -655,7 +758,7 @@ function init(options) {
     const probe = { debug: !!o.debug, logged: new Set() };
     if (o.enabled === false) return;
     if (typeof o.key !== 'string' || !KEY_RE.test(o.key.trim())) {
-      debug(probe, 'not started: key must be the crk_ key from your site\'s Errors page');
+      debug(probe, 'not started: key must be your site\'s crk_ app key (its Security scan tab, Apps, servers and scripts)');
       return;
     }
     if (typeof fetch !== 'function') {
@@ -674,6 +777,9 @@ function init(options) {
       environment = undefined;
     }
     const rate = Number(o.sampleRate);
+    const names = extraNames(o.scrubNames, probe);
+    const patterns = extraPatterns(o.scrubPatterns, probe);
+    const alternation = names.map((n) => n.replace(/\./g, '\\.')).join('|');
     let runtime = 'node';
     try {
       runtime = clip('node ' + process.versions.node.split('.').slice(0, 2).join('.'), 60);
@@ -690,6 +796,9 @@ function init(options) {
       beforeSend: typeof o.beforeSend === 'function' ? o.beforeSend : null,
       debug: !!o.debug,
       context: o.context && typeof o.context === 'object' ? o.context : null,
+      extraNames: names.length ? new RegExp('(?<![A-Za-z0-9])((?:' + alternation + ')\\\\?["\']?[ ]*[=:][ ]*\\\\?["\']?)[^ \\t\\r\\n&,;"\'<>\\\\]+', 'gi') : null,
+      extraKeys: names.length ? new RegExp('(?:^|[^A-Za-z0-9])(?:' + alternation + ')$', 'i') : null,
+      extraPatterns: patterns.length ? patterns : null,
       platform: PLATFORMS.includes(o.platform) ? o.platform : 'server',
       runtime,
       queue: new Map(),
@@ -774,6 +883,26 @@ function expressErrorHandler() {
   };
 }
 
+/**
+ * Next.js: the whole of instrumentation.ts's onRequestError, `await monitor.captureRequestError(err, request, context)`.
+ * The route is the one Next.js names (`GET /app/api/orders/[id]`): never request.path, which carries the query string,
+ * and never the headers. Then what is waiting is sent before the function can be frozen: the promise resolves true once
+ * nothing is left, or false after at most 2 s.
+ */
+function captureRequestError(error, request, context) {
+  try {
+    const method = request && typeof request.method === 'string' ? request.method.toUpperCase() : '';
+    const routePath = context && typeof context.routePath === 'string' ? context.routePath : '';
+    const route = [method, routePath].filter(Boolean).join(' ');
+    const extra = { route: route || undefined };
+    if (context && typeof context.routeType === 'string') extra.context = { routeType: context.routeType };
+    capture('http', error, extra);
+  } catch {
+    // Never a second problem.
+  }
+  return flush(EXIT_FLUSH_MS);
+}
+
 // --- exports (scripts/sdk-index.mjs writes the CommonJS twin from everything above this line) ---
-export { init, close, captureException, captureMessage, expressErrorHandler, flush, scrub };
-export default { init, close, captureException, captureMessage, expressErrorHandler, flush, scrub };
+export { init, close, captureException, captureMessage, captureRequestError, expressErrorHandler, flush, scrub };
+export default { init, close, captureException, captureMessage, captureRequestError, expressErrorHandler, flush, scrub };

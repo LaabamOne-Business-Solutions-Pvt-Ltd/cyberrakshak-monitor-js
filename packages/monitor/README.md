@@ -29,7 +29,32 @@ monitor.captureException(err, { route: 'nightly-import', context: { batch: 42 } 
 await monitor.flush(2000);                            // before you call process.exit() yourself
 ```
 
-The key is your site's app key (`crk_…`), from the site's **Errors** page. Types are included (`index.d.ts`).
+The key is your site's app key (`crk_…`), made on the site's **Security scan** tab: under **Apps, servers and scripts**, press **Make an app key**. Types are included (`index.d.ts`).
+
+## Next.js
+
+On Vercel or any serverless host, report from `instrumentation.ts`, in the Node.js runtime:
+
+```ts
+import type { Instrumentation } from 'next';
+
+export async function register() {
+  if (process.env.NEXT_RUNTIME !== 'nodejs') return;
+  const monitor = await import('@cyberrakshak/monitor');
+  monitor.init({ key: process.env.CR_MONITOR_KEY, release: process.env.VERCEL_GIT_COMMIT_SHA, environment: process.env.VERCEL_ENV });
+}
+
+export const onRequestError: Instrumentation.onRequestError = async (err, request, context) => {
+  if (process.env.NEXT_RUNTIME !== 'nodejs') return;
+  const monitor = await import('@cyberrakshak/monitor');
+  await monitor.captureRequestError(err, request, context);
+};
+```
+
+`captureRequestError` reports the error under the route Next.js names (`POST /app/api/pay/route`): never
+`request.path`, which carries the query string, and never the headers. It resolves once what is waiting is sent (at
+most 2 s), so the function is not frozen before it goes. Set `CR_MONITOR_KEY` only where you want reports (Vercel's
+Production environment, say): with no key nothing starts and nothing is sent.
 
 ## Options
 
@@ -44,13 +69,15 @@ The key is your site's app key (`crk_…`), from the site's **Errors** page. Typ
 | `beforeSend` | Gets each problem, already scrubbed; return it (changed if you like) or `null` to drop it. Not a promise. |
 | `debug` | Says on standard error what the library does and why something was not sent. The key is never printed. |
 | `context` | Values sent with every problem: at most 20, strings (300 characters), numbers, true/false. |
+| `scrubNames` | Names of your own whose values are removed, like `password=`: whole words, `A-Z a-z 0-9 _ . -`, at most 50. Only adds to the built-in rules. |
+| `scrubPatterns` | Regular expressions of your own (`RegExp`, or a string compiled with the `g` flag): what they match becomes `[removed]`. At most 20; one that does not compile, or matches an empty text, is left out. Only adds to the built-in rules. |
 | `platform` | `server` (the default), `script`, `desktop`, `mobile` or `other`. |
 | `captureUncaught` | Report uncaught exceptions (default `true`). |
 | `captureRejections` | Report unhandled promise rejections (default `true`). |
 | `exitSend` | On `process.exit()`, send what is still waiting from a short-lived child process, 2 s at most (default `true`). |
 
 Functions: `init(options)`, `captureException(error, { route, context, level })`, `captureMessage(text, { level, route,
-context })` (level `warning` by default), `expressErrorHandler()`, `flush(timeoutMs)` (resolves to `true` when nothing
+context })` (level `warning` by default), `captureRequestError(error, request, context)` (Next.js), `expressErrorHandler()`, `flush(timeoutMs)` (resolves to `true` when nothing
 is left waiting), `scrub(text)` (shows what a text would become), `close()`.
 
 ## What is sent, and what never is
@@ -65,8 +92,12 @@ variables.
 
 **Scrubbed before anything leaves**: query strings; `Bearer`/`Basic` values; the value after `password`, `secret`,
 `token`, `api_key` and the like; JSON Web Tokens; keys that say what they are (`crk_`, `sk_live_`, `ghp_`, `AKIA`…);
-email addresses; card numbers (Luhn-checked); long hex and random-looking runs. They become `[removed]`, `[token]`,
-`[email]` or `[card]`. The console scrubs everything again when it arrives.
+email addresses; IBANs (mod-97 checked); card numbers (Luhn-checked); the value after `pin`, `otp`, `cvv`, `iban`,
+`sort_code`, `card_number`, `account_number`, `cookie`, `signature`, `authorization` and the like, as whole words only
+(`company:` and `spinning:` stay); long hex and random-looking runs. They become `[removed]`, `[token]`, `[email]`,
+`[iban]` or `[card]`, and a context entry whose name is one of these names is sent as `[removed]`. `scrubNames` and
+`scrubPatterns` add names and patterns of your own; nothing switches the built-in rules off. The console scrubs
+everything again when it arrives.
 
 At most 10 problems go per request, each request under 64 KB; repeats of one problem are counted, not resent; a request
 takes at most 5 s; `429` and `5xx` answers are retried later (never before `Retry-After`). Nothing in the library throws

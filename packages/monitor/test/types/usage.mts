@@ -25,9 +25,22 @@ const handler: (error: unknown, req: { method?: string; url?: string }, res: unk
 handler(new Error('x'), { method: 'GET', url: '/' }, {}, () => undefined);
 const sent: Promise<boolean> = monitor.flush(2000);
 const scrubbed: string = monitor.scrub('password=hunter2');
+init({ key: 'crk_00000000000000000000000000000000', scrubNames: ['x-brand-key', 'face.key'], scrubPatterns: [/faces\/\S+/, 'upload-[0-9]+'] });
+// Next.js: instrumentation.ts's onRequestError, as Next.js hands it over.
+const reported: Promise<boolean> = monitor.captureRequestError(
+  new Error('x'),
+  { path: '/api/pay?otp=1', method: 'POST', headers: { cookie: 'sid=1', accept: ['a', 'b'] } },
+  { routerKind: 'App Router', routePath: '/app/api/pay/route', routeType: 'route', renderSource: 'react-server-components', revalidateReason: undefined, renderType: 'dynamic' },
+);
+const alsoDefault: Promise<boolean> = monitorDefault.captureRequestError(null, null, null);
 monitor.close();
 void sent;
 void scrubbed;
+void reported;
+void alsoDefault;
+
+// @ts-expect-error: scrubNames is a list of names
+init({ key: 'crk_00000000000000000000000000000000', scrubNames: 'x-brand-key' });
 
 // @ts-expect-error: the key is required
 init({});

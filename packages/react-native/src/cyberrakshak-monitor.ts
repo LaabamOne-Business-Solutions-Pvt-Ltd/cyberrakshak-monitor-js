@@ -1,5 +1,5 @@
 /*!
- * Cyber Rakshak error monitoring for React Native and Expo, version 1.0.0
+ * Cyber Rakshak error monitoring for React Native and Expo, version 1.1.0
  * Docs: https://app.cyberrakshak.ai/sdk/README.md
  * Copyright Laabam One Business Solutions (OPC) Private Limited
  * Released under the MIT licence: https://app.cyberrakshak.ai/sdk/LICENSE
@@ -51,7 +51,7 @@ export interface Storage {
 }
 
 export interface Options {
-  /** The crk_ key from your site's Errors page. */
+  /** Your site's crk_ app key: its Security scan tab, Apps, servers and scripts, Make an app key. */
   key: string;
   endpoint?: string;
   release?: string;
@@ -63,6 +63,10 @@ export interface Options {
   debug?: boolean;
   /** Sent with every problem (at most 20 values: strings, numbers, true/false). */
   context?: Record<string, unknown>;
+  /** Names of your own whose values are removed, like password= (whole words, A-Z a-z 0-9 _ . -, at most 50). Only adds to the built-in rules. */
+  scrubNames?: string[];
+  /** Regular expressions of your own: what they match is removed (at most 20). Only adds to the built-in rules. */
+  scrubPatterns?: Array<RegExp | string>;
   storage?: Storage;
   /** Unhandled promise rejections, in release builds on Hermes (default true). */
   capturePromiseRejections?: boolean;
@@ -88,6 +92,9 @@ interface State {
   beforeSend: Options['beforeSend'] | null;
   debug: boolean;
   context: Record<string, unknown> | null;
+  extraNames: Rule | null;
+  extraKeys: RegExp | null;
+  extraPatterns: RegExp[] | null;
   platform: 'mobile' | 'desktop' | 'other';
   runtime: string;
   storage: Storage | null;
@@ -105,7 +112,7 @@ interface State {
 }
 
 const SDK_NAME = 'cyberrakshak-react-native';
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 const DEFAULT_ENDPOINT = 'https://app.cyberrakshak.ai/api/v1/app-reports';
 const STORAGE_KEY = 'cyberrakshak-monitor:v1';
 
@@ -159,8 +166,24 @@ const SCRUB_RULES: Rule[] = [
   },
   // Email addresses.
   { re: /[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, replace: () => '[email]' },
+  // IBANs: two capital letters, two digits, then 11 to 30 capitals or digits (or the same in groups of four, single
+  // spaces between), 15 to 34 in all, passing the ISO 13616 mod-97 check. Before cards: an IBAN holds a digit run.
+  {
+    re: /[A-Z]{2}[0-9]{2}(?:[A-Z0-9]{11,30}|(?: [A-Z0-9]{4}){2,7}(?: [A-Z0-9]{1,4})?)(?![A-Za-z0-9])/g,
+    notAfter: /[A-Za-z0-9]/,
+    replace: (m) => (ibanOk(m[0]) ? '[iban]' : null),
+  },
   // Card numbers: 13 to 19 digits (single spaces or dashes between) that pass the Luhn check.
   { re: /[0-9](?:[ -]?[0-9]){12,18}/g, notAfter: /[0-9]/, replace: (m) => (luhn(m[0].replace(/[ -]/g, '')) ? '[card]' : null) },
+  // pin: 1234, "iban": "...", set-cookie: ..., x-tink-signature=...: these names only as whole words (not right after a
+  // letter or digit, the separator right after the name), so company:, spinning: and japan: stay; the value goes as in
+  // the password rule. After IBANs and cards, so a value with spaces in it has gone whole already. A value that is
+  // Bearer or Basic and a space was handled above.
+  {
+    re: /((?:authorization|cookie|signature|otp|pin|cvv|cvc|iban|bban|pan|account[_-]?(?:no|number|num)|sort[_-]?code|card[_-]?number|bank[_-]?auth[_-]?id)\\?["']?[ ]*[=:][ ]*\\?["']?)(?!(?:bearer|basic) )[^ \t\r\n&,;"'<>\\]+/gi,
+    notAfter: /[A-Za-z0-9]/,
+    replace: (m) => m[1] + '[removed]',
+  },
   // Long hex runs: session ids, hashes, keys.
   { re: /[0-9a-fA-F]{32,}/g, replace: () => '[token]' },
   // Long random-looking runs: a digit, an upper-case and a lower-case letter in 40 or more of A-Z a-z 0-9 + _ -.
@@ -204,15 +227,107 @@ function applyRule(text: string, rule: Rule): string {
   return out + text.slice(last);
 }
 
-/** What a text looks like once scrubbed: what this library would send. */
+/** ISO 13616: the first four characters moved to the end, letters as 10..35, the whole number mod 97 is 1. */
+function ibanOk(text: string): boolean {
+  const s = text.replace(/ /g, '');
+  if (s.length < 15 || s.length > 34) return false;
+  const moved = s.slice(4) + s.slice(0, 4);
+  let rest = 0;
+  for (let i = 0; i < moved.length; i++) {
+    const c = moved.charCodeAt(i);
+    const v = c >= 65 ? c - 55 : c - 48;
+    rest = v > 9 ? (rest * 100 + v) % 97 : (rest * 10 + v) % 97;
+  }
+  return rest === 1;
+}
+
+// A context entry's name that says its value is a secret: the words of the password rule anywhere in it, or one of the
+// whole-word names (at the end, not right after a letter or digit: user_pin, x-tink-signature, not spinning).
+const SECRET_NAME_RE = /password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|credential|session[_-]?id/i;
+const WHOLE_NAME_RE = /(?:^|[^A-Za-z0-9])(?:authorization|cookie|signature|otp|pin|cvv|cvc|iban|bban|pan|account[_-]?(?:no|number|num)|sort[_-]?code|card[_-]?number|bank[_-]?auth[_-]?id)$/i;
+const EXTRA_NAME_RE = /^[A-Za-z0-9_.-]{1,40}$/;
+const MAX_EXTRA_NAMES = 50;
+const MAX_EXTRA_PATTERNS = 20;
+
+function secretName(name: string): boolean {
+  const s = S;
+  return SECRET_NAME_RE.test(name) || WHOLE_NAME_RE.test(name) || !!(s && s.extraKeys && s.extraKeys.test(name));
+}
+
+/**
+ * What a text looks like once scrubbed: what this library would send. The built-in rules always run, first; then the
+ * names and patterns given to init() as scrubNames and scrubPatterns, which can only add to them.
+ */
 export function scrub(text: unknown): string {
   try {
     let out = typeof text === 'string' ? text : text === undefined || text === null ? '' : String(text);
     for (const rule of SCRUB_RULES) out = applyRule(out, rule);
+    const s = S;
+    if (s && s.extraNames) out = applyRule(out, s.extraNames);
+    if (s && s.extraPatterns) {
+      for (const pattern of s.extraPatterns) {
+        try {
+          pattern.lastIndex = 0;
+          out = out.replace(pattern, '[removed]');
+        } catch {
+          // A pattern of yours that fails is skipped; the built-in rules have run.
+        }
+      }
+    }
     return out;
   } catch {
     return '';
   }
+}
+
+/** scrubNames: names of your own, as whole words, their values removed like the built-in ones; at most 50. */
+function extraNames(list: unknown, probe: { debug: boolean }): string[] {
+  const names: string[] = [];
+  if (list === undefined || list === null) return names;
+  if (!Array.isArray(list)) {
+    debug(probe, 'scrubNames left out: it must be a list of names');
+    return names;
+  }
+  for (const name of list) {
+    if (typeof name !== 'string' || !EXTRA_NAME_RE.test(name)) {
+      debug(probe, 'scrubNames: a name was left out: only A-Z a-z 0-9 _ . - (1 to 40)');
+      continue;
+    }
+    if (names.length >= MAX_EXTRA_NAMES) {
+      debug(probe, 'scrubNames: only the first ' + MAX_EXTRA_NAMES + ' are used');
+      break;
+    }
+    if (names.indexOf(name.toLowerCase()) < 0) names.push(name.toLowerCase());
+  }
+  return names;
+}
+
+/** scrubPatterns: regular expressions of your own (RegExp, or a string compiled with the g flag); what they match goes. */
+function extraPatterns(list: unknown, probe: { debug: boolean }): RegExp[] {
+  const patterns: RegExp[] = [];
+  if (list === undefined || list === null) return patterns;
+  if (!Array.isArray(list)) {
+    debug(probe, 'scrubPatterns left out: it must be a list of patterns');
+    return patterns;
+  }
+  for (const p of list) {
+    if (patterns.length >= MAX_EXTRA_PATTERNS) {
+      debug(probe, 'scrubPatterns: only the first ' + MAX_EXTRA_PATTERNS + ' are used');
+      break;
+    }
+    try {
+      const re = p instanceof RegExp ? new RegExp(p.source, p.flags.indexOf('g') >= 0 ? p.flags : p.flags + 'g') : new RegExp(String(p), 'g');
+      if (re.test('')) {
+        debug(probe, 'scrubPatterns: a pattern that matches an empty text was left out');
+        continue;
+      }
+      re.lastIndex = 0;
+      patterns.push(re);
+    } catch (e) {
+      debug(probe, 'scrubPatterns: a pattern was left out: ' + describe(e));
+    }
+  }
+  return patterns;
 }
 
 // ── State ─────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -337,7 +452,8 @@ function cleanContext(...sources: unknown[]): Record<string, ContextValue> | und
       const key = clip(name, MAX_CONTEXT_KEY);
       const value = record[name];
       let kept: ContextValue | undefined;
-      if (value === null || typeof value === 'boolean') kept = value;
+      if (secretName(name)) kept = '[removed]';
+      else if (value === null || typeof value === 'boolean') kept = value;
       else if (typeof value === 'number') kept = Number.isFinite(value) ? value : undefined;
       else if (typeof value === 'bigint') kept = String(value);
       else if (typeof value === 'string') kept = cleanText(value, MAX_CONTEXT_VALUE);
@@ -771,7 +887,7 @@ export function init(options: Options): void {
     const probe = { debug: !!o.debug };
     if (o.enabled === false) return;
     if (typeof o.key !== 'string' || !KEY_RE.test(o.key.trim())) {
-      debug(probe, "not started: key must be the crk_ key from your site's Errors page");
+      debug(probe, "not started: key must be your site's crk_ app key (its Security scan tab, Apps, servers and scripts)");
       return;
     }
     if (typeof fetch !== 'function') {
@@ -801,6 +917,9 @@ export function init(options: Options): void {
       // 'react-native' and mobile, then.
     }
     const rate = Number(o.sampleRate);
+    const names = extraNames(o.scrubNames, probe);
+    const patterns = extraPatterns(o.scrubPatterns, probe);
+    const alternation = names.map((n) => n.replace(/\./g, '\\.')).join('|');
     const s: State = {
       key: o.key.trim(),
       endpoint,
@@ -810,6 +929,11 @@ export function init(options: Options): void {
       beforeSend: typeof o.beforeSend === 'function' ? o.beforeSend : null,
       debug: !!o.debug,
       context: o.context && typeof o.context === 'object' ? o.context : null,
+      extraNames: names.length
+        ? { re: new RegExp('((?:' + alternation + ')\\\\?["\']?[ ]*[=:][ ]*\\\\?["\']?)[^ \\t\\r\\n&,;"\'<>\\\\]+', 'gi'), notAfter: /[A-Za-z0-9]/, replace: (m) => m[1] + '[removed]' }
+        : null,
+      extraKeys: names.length ? new RegExp('(?:^|[^A-Za-z0-9])(?:' + alternation + ')$', 'i') : null,
+      extraPatterns: patterns.length ? patterns : null,
       platform,
       runtime,
       storage: o.storage && typeof o.storage.getItem === 'function' && typeof o.storage.setItem === 'function' && typeof o.storage.removeItem === 'function' ? o.storage : null,
