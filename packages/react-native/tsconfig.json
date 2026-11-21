@@ -1,0 +1,18 @@
+{
+  "//": "npm run typecheck: the source, strictly, against react-native's own types (the options the console's tests/sdk/run-all.mjs uses).",
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "target": "es2020",
+    "lib": ["es2020"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "skipLibCheck": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true
+  },
+  "files": ["src/cyberrakshak-monitor.ts"]
+}

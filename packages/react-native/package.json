@@ -1,0 +1,57 @@
+{
+  "name": "@cyberrakshak/react-native",
+  "version": "1.0.0",
+  "description": "Cyber Rakshak error monitoring for React Native and Expo: errors and crashes from React Native's global handler and unhandled promise rejections on Hermes, scrubbed of secrets, sent to your site's Errors page. No native modules.",
+  "license": "MIT",
+  "author": "Laabam One Business Solutions (OPC) Private Limited",
+  "homepage": "https://app.cyberrakshak.ai/sdk/README.md",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LaabamOne-Business-Solutions-Pvt-Ltd/cyberrakshak-monitor-js.git",
+    "directory": "packages/react-native"
+  },
+  "bugs": {
+    "url": "https://github.com/LaabamOne-Business-Solutions-Pvt-Ltd/cyberrakshak-monitor-js/issues"
+  },
+  "keywords": [
+    "react-native",
+    "expo",
+    "error-monitoring",
+    "crash-reporting",
+    "hermes",
+    "cyberrakshak"
+  ],
+  "main": "./lib/cyberrakshak-monitor.js",
+  "types": "./lib/cyberrakshak-monitor.d.ts",
+  "react-native": "./lib/cyberrakshak-monitor.js",
+  "exports": {
+    ".": {
+      "types": "./lib/cyberrakshak-monitor.d.ts",
+      "default": "./lib/cyberrakshak-monitor.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/cyberrakshak-monitor.js",
+    "lib/cyberrakshak-monitor.d.ts",
+    "CHANGELOG.md"
+  ],
+  "sideEffects": false,
+  "peerDependencies": {
+    "react-native": ">=0.70"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "react-native": "0.88.1",
+    "typescript": "5.9.3"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json && tsc -p test/types/tsconfig.json",
+    "prepack": "npm run build",
+    "test": "node --test test/rn.test.mjs"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

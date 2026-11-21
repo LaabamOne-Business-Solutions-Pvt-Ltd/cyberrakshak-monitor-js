@@ -1,0 +1,58 @@
+{
+  "name": "@cyberrakshak/monitor",
+  "version": "1.0.0",
+  "description": "Cyber Rakshak error monitoring for Node.js: uncaught exceptions, unhandled rejections and Express 5xx errors, scrubbed of secrets, sent to your site's Errors page. One file, no dependencies.",
+  "license": "MIT",
+  "author": "Laabam One Business Solutions (OPC) Private Limited",
+  "homepage": "https://app.cyberrakshak.ai/sdk/README.md",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LaabamOne-Business-Solutions-Pvt-Ltd/cyberrakshak-monitor-js.git",
+    "directory": "packages/monitor"
+  },
+  "bugs": {
+    "url": "https://github.com/LaabamOne-Business-Solutions-Pvt-Ltd/cyberrakshak-monitor-js/issues"
+  },
+  "keywords": [
+    "error-monitoring",
+    "error-tracking",
+    "crash-reporting",
+    "exceptions",
+    "express",
+    "cyberrakshak"
+  ],
+  "main": "./cyberrakshak-monitor.cjs",
+  "module": "./cyberrakshak-monitor.mjs",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./index.d.mts",
+        "default": "./cyberrakshak-monitor.mjs"
+      },
+      "require": {
+        "types": "./index.d.ts",
+        "default": "./cyberrakshak-monitor.cjs"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "cyberrakshak-monitor.mjs",
+    "cyberrakshak-monitor.cjs",
+    "index.d.ts",
+    "index.d.mts",
+    "CHANGELOG.md"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "typecheck": "tsc -p test/types/tsconfig.json",
+    "test": "node --test test/node.test.mjs test/api.test.mjs"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

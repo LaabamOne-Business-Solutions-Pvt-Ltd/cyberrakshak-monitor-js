@@ -1,0 +1,19 @@
+{
+  "//": "npm run build: src/cyberrakshak-monitor.ts to lib/ as CommonJS JavaScript + .d.ts (Metro, Expo and Jest all load CommonJS from node_modules). Comments are kept: the header holds the copyright and licence.",
+  "compilerOptions": {
+    "strict": true,
+    "target": "es2019",
+    "lib": ["es2020"],
+    "module": "node16",
+    "moduleResolution": "node16",
+    "declaration": true,
+    "rootDir": "src",
+    "outDir": "lib",
+    "removeComments": false,
+    "noEmitOnError": true,
+    "newLine": "lf",
+    "skipLibCheck": true,
+    "types": []
+  },
+  "files": ["src/cyberrakshak-monitor.ts"]
+}

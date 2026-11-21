@@ -1,0 +1,57 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  monitor:
+    # No install: @cyberrakshak/monitor has no dependencies, and its tests load it by its own name ("exports").
+    name: '@cyberrakshak/monitor, Node ${{ matrix.node }} on ${{ matrix.os }}'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        node: [18, 20, 22, 24]
+        include:
+          - { os: windows-latest, node: 22 }
+          - { os: macos-latest, node: 22 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm test -w @cyberrakshak/monitor
+
+  react-native-and-types:
+    # registerHooks (the react-native stand-in) needs Node 22.15+; type stripping (CR_RN_TEST_SOURCE=1) 22.18+.
+    name: '@cyberrakshak/react-native + types + pack, Node ${{ matrix.node }}'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - name: Type check (the source strictly against react-native's own types; both packages' types as an app uses them)
+        run: npm run typecheck
+      - name: Tests on the compiled package (lib/)
+        run: npm test -w @cyberrakshak/react-native
+      - name: Tests on the TypeScript source
+        run: npm test -w @cyberrakshak/react-native
+        env:
+          CR_RN_TEST_SOURCE: '1'
+      - name: What npm pack would publish
+        run: node scripts/check-pack.mjs

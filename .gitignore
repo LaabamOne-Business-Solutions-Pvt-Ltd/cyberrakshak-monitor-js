@@ -1,0 +1,5 @@
+node_modules/
+# Built by npm run build (tsc): never committed, always built before packing
+packages/react-native/lib/
+*.tgz
+.DS_Store

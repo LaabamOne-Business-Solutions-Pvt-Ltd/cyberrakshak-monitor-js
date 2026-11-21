@@ -1,0 +1,15 @@
+{
+  "name": "cyberrakshak-monitor-js",
+  "private": true,
+  "description": "Cyber Rakshak error monitoring for JavaScript: @cyberrakshak/monitor (Node.js) and @cyberrakshak/react-native.",
+  "license": "MIT",
+  "workspaces": [
+    "packages/monitor",
+    "packages/react-native"
+  ],
+  "scripts": {
+    "build": "npm run build -w @cyberrakshak/react-native",
+    "typecheck": "npm run typecheck --workspaces",
+    "test": "npm test --workspaces"
+  }
+}

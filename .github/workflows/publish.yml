@@ -1,0 +1,54 @@
+name: publish
+
+# Pushing a tag vX.Y.Z publishes @cyberrakshak/monitor and @cyberrakshak/react-native at X.Y.Z to npm, with provenance,
+# by npm's trusted publishing (OIDC): no npm token is stored anywhere. Each package's trusted publisher on npmjs.com
+# names this repository, this workflow file (publish.yml) and the environment "npm". A version npm already has is
+# skipped, so 1.0.0 (published once by hand, see README.md "For maintainers") and a re-run are both safe.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: npm 11.5.1 or later (trusted publishing)
+        run: npm install -g npm@11 && npm --version
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - run: npm run typecheck
+      - run: npm test
+      - run: node scripts/check-pack.mjs
+      - name: The tag is both packages' version
+        run: |
+          node -e '
+            const tag = process.env.GITHUB_REF_NAME.replace(/^v/, "");
+            for (const dir of ["packages/monitor", "packages/react-native"]) {
+              const { name, version } = require("./" + dir + "/package.json");
+              if (version !== tag) { console.error(name + " is " + version + ", the tag is " + tag); process.exit(1); }
+            }'
+      - name: Publish
+        run: |
+          for pkg in @cyberrakshak/monitor @cyberrakshak/react-native; do
+            version=$(node -p "require('./node_modules/$pkg/package.json').version")
+            if npm view "$pkg@$version" version >/dev/null 2>&1; then
+              echo "$pkg@$version is on npm already: skipped"
+            else
+              npm publish --provenance --access public -w "$pkg"
+            fi
+          done
