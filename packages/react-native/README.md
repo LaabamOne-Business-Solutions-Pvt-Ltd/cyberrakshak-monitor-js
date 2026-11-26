@@ -1,6 +1,6 @@
 # @cyberrakshak/react-native
 
-Cyber Rakshak error monitoring for **React Native and Expo**: what goes wrong in your app lands on your site's
+Cyber Rakshak error monitoring for **React Native and Expo**: what goes wrong in your app lands on its own
 **Errors** page in the Cyber Rakshak console, scrubbed of secrets on the phone before it leaves. No native modules, no
 dependencies: plain JavaScript, so it works in Expo Go and with any build.
 
@@ -34,14 +34,14 @@ monitor.setRoute('Checkout');                 // from your navigation's state ch
 // in an error boundary: monitor.captureException(error, { componentStack: info.componentStack });
 ```
 
-The key is your site's app key (`crk_…`), made on the site's **Security scan** tab: under **Apps, servers and scripts**, press **Make an app key**. Types are included. Import it with
+The key is its app key (`crk_…`): in the console's **Apps & websites**, under **Add**, choose what it is and give it a name; its key is shown once on its **Set up** page. A key made before on a website's **Security scan** tab keeps working. Types are included. Import it with
 `import * as monitor` (as above): it is compiled to CommonJS, which Metro, Expo and Jest all load.
 
 ## Options
 
 | Option | Meaning |
 |---|---|
-| `key` | Your site's app key, `crk_` and 32 letters or digits. Required; with no valid key the library does nothing. |
+| `key` | Its app key, `crk_` and 32 letters or digits. Required; with no valid key the library does nothing. |
 | `endpoint` | Where reports go. Default `https://app.cyberrakshak.ai/api/v1/app-reports`. |
 | `release` | Your version or build (`A-Z a-z 0-9 . _ + -`, at most 60), so a problem shows the release it started in. |
 | `environment` | `production`, `staging`… (`a-z 0-9 _ -`, at most 30). |

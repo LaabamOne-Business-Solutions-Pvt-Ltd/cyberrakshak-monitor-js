@@ -80,7 +80,7 @@ test('a captured exception is sent in the contract\'s shape, scrubbed', async ()
   const r = fake.requests[0];
   assert.equal(r.authorization, 'Bearer ' + KEY);
   assert.equal(r.body.sdk.name, 'cyberrakshak-node');
-  assert.equal(r.body.sdk.version, '1.1.0');
+  assert.equal(r.body.sdk.version, '1.1.1');
   assert.equal(r.body.platform, 'server');
   assert.match(r.body.runtime, /^node \d+\.\d+$/);
   assert.equal(r.body.release, '2026.11.21+3');

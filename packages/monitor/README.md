@@ -1,6 +1,6 @@
 # @cyberrakshak/monitor
 
-Cyber Rakshak error monitoring for **Node.js 18+**: what goes wrong in your server or script lands on your site's
+Cyber Rakshak error monitoring for **Node.js 18+**: what goes wrong in your server or script lands on its own
 **Errors** page in the Cyber Rakshak console, scrubbed of secrets before it leaves. One file, no dependencies, ES module
 and CommonJS.
 
@@ -29,7 +29,7 @@ monitor.captureException(err, { route: 'nightly-import', context: { batch: 42 } 
 await monitor.flush(2000);                            // before you call process.exit() yourself
 ```
 
-The key is your site's app key (`crk_…`), made on the site's **Security scan** tab: under **Apps, servers and scripts**, press **Make an app key**. Types are included (`index.d.ts`).
+The key is its app key (`crk_…`): in the console's **Apps & websites**, under **Add**, choose what it is and give it a name; its key is shown once on its **Set up** page. A key made before on a website's **Security scan** tab keeps working. Types are included (`index.d.ts`).
 
 ## Next.js
 
@@ -60,7 +60,7 @@ Production environment, say): with no key nothing starts and nothing is sent.
 
 | Option | Meaning |
 |---|---|
-| `key` | Your site's app key, `crk_` and 32 letters or digits. Required; with no valid key the library does nothing. |
+| `key` | Its app key, `crk_` and 32 letters or digits. Required; with no valid key the library does nothing. |
 | `endpoint` | Where reports go. Default `https://app.cyberrakshak.ai/api/v1/app-reports`. |
 | `release` | Your version or build (`A-Z a-z 0-9 . _ + -`, at most 60), so a problem shows the release it started in. |
 | `environment` | `production`, `staging`… (`a-z 0-9 _ -`, at most 30). |

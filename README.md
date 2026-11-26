@@ -1,6 +1,6 @@
 # Cyber Rakshak error monitoring for JavaScript
 
-What goes wrong in your apps, servers and scripts, on your site's **Errors** page in the Cyber Rakshak console:
+What goes wrong in your apps, servers and scripts, on their own **Errors** page in the Cyber Rakshak console:
 scrubbed of secrets before it leaves, counted rather than resent, and never in your app's way.
 
 | Package | For | |
