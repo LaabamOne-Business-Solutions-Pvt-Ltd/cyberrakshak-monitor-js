@@ -24,7 +24,7 @@ export interface Problem {
 }
 
 export interface Options {
-  /** Your site's app key: crk_ and 32 letters or digits (the site's Security scan tab, Apps, servers and scripts, Make an app key). Without a valid key nothing starts. */
+  /** Its app key: crk_ and 32 letters or digits (the console's Apps & websites: Add, then its Set up page). Without a valid key nothing starts. */
   key: string;
   /** Where reports go. Default https://app.cyberrakshak.ai/api/v1/app-reports. */
   endpoint?: string;

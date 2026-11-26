@@ -1,11 +1,11 @@
 /*!
- * Cyber Rakshak error monitoring for React Native and Expo, version 1.1.0
+ * Cyber Rakshak error monitoring for React Native and Expo, version 1.1.1
  * Docs: https://app.cyberrakshak.ai/sdk/README.md
  * Copyright Laabam One Business Solutions (OPC) Private Limited
  * Released under the MIT licence: https://app.cyberrakshak.ai/sdk/LICENSE
  *
  * One TypeScript file, no native modules and no dependencies: put it in your app's source and import it. Sends what
- * goes wrong in your app to your site's Errors page in the Cyber Rakshak console: the error's text, its stack, the
+ * goes wrong in your app to its own Errors page in the Cyber Rakshak console: the error's text, its stack, the
  * screen, when and how often, and the OS version. Secrets are scrubbed on the phone before anything leaves (email
  * addresses, tokens and keys, password=... values, query strings, card numbers). Nothing the user types, no device id,
  * no location, no contacts.
@@ -51,7 +51,7 @@ export interface Storage {
 }
 
 export interface Options {
-  /** Your site's crk_ app key: its Security scan tab, Apps, servers and scripts, Make an app key. */
+  /** Its crk_ app key: the console's Apps & websites, Add, then its Set up page. */
   key: string;
   endpoint?: string;
   release?: string;
@@ -112,7 +112,7 @@ interface State {
 }
 
 const SDK_NAME = 'cyberrakshak-react-native';
-const VERSION = '1.1.0';
+const VERSION = '1.1.1';
 const DEFAULT_ENDPOINT = 'https://app.cyberrakshak.ai/api/v1/app-reports';
 const STORAGE_KEY = 'cyberrakshak-monitor:v1';
 
@@ -887,7 +887,7 @@ export function init(options: Options): void {
     const probe = { debug: !!o.debug };
     if (o.enabled === false) return;
     if (typeof o.key !== 'string' || !KEY_RE.test(o.key.trim())) {
-      debug(probe, "not started: key must be your site's crk_ app key (its Security scan tab, Apps, servers and scripts)");
+      debug(probe, "not started: key must be its crk_ app key (the console's Apps & websites: Add, then its Set up page)");
       return;
     }
     if (typeof fetch !== 'function') {

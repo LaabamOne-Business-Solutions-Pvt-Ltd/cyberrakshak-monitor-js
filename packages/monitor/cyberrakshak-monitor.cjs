@@ -1,10 +1,10 @@
 /*!
- * Cyber Rakshak error monitoring for Node.js, version 1.1.0
+ * Cyber Rakshak error monitoring for Node.js, version 1.1.1
  * Docs: https://app.cyberrakshak.ai/sdk/README.md
  * Copyright Laabam One Business Solutions (OPC) Private Limited
  * Released under the MIT licence: https://app.cyberrakshak.ai/sdk/LICENSE
  *
- * One file, no dependencies, Node 18 or later. Sends what goes wrong in your server or script to your site's Errors page
+ * One file, no dependencies, Node 18 or later. Sends what goes wrong in your server or script to its own Errors page
  * in the Cyber Rakshak console: the error's text, its stack, the route or command, when and how often. Secrets are
  * scrubbed here before anything leaves (email addresses, tokens and keys, password=... values, query strings, card
  * numbers); request bodies, headers, cookies and environment variables are never read.
@@ -31,7 +31,7 @@ const { spawnSync } = require('node:child_process');
 const { inspect } = require('node:util');
 
 const SDK_NAME = 'cyberrakshak-node';
-const VERSION = '1.1.0';
+const VERSION = '1.1.1';
 const DEFAULT_ENDPOINT = 'https://app.cyberrakshak.ai/api/v1/app-reports';
 
 const KEY_RE = /^crk_[A-Za-z0-9]{32}$/;
@@ -760,7 +760,7 @@ function init(options) {
     const probe = { debug: !!o.debug, logged: new Set() };
     if (o.enabled === false) return;
     if (typeof o.key !== 'string' || !KEY_RE.test(o.key.trim())) {
-      debug(probe, 'not started: key must be your site\'s crk_ app key (its Security scan tab, Apps, servers and scripts)');
+      debug(probe, 'not started: key must be its crk_ app key (the console\'s Apps & websites: Add, then its Set up page)');
       return;
     }
     if (typeof fetch !== 'function') {
